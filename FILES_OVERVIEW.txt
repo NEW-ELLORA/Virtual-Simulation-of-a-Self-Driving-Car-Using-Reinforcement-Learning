@@ -1,0 +1,101 @@
+================================================================================
+AUTONOMOUS SELF-DRIVING CAR SIMULATOR - FILE OVERVIEW & IMPORTANCE
+================================================================================
+
+This document explains the exact purpose and importance of each file kept in this
+clean directory in a few simple lines.
+
+--------------------------------------------------------------------------------
+1. driving_sim.py
+--------------------------------------------------------------------------------
+- What it is: The main simulator application and core 3D visual engine.
+- Why it is important: It generates the 3D procedural city (roads, flyovers, buildings,
+  crosswalks, signals), calculates vehicle physics, renders the 2.5D pseudo-3D
+  graphics, simulates traffic cars and pedestrians, and runs the main game loop.
+- How to run: Double-click 'run_simulation.bat' or run 'python driving_sim.py'.
+
+--------------------------------------------------------------------------------
+2. rl_agent.py
+--------------------------------------------------------------------------------
+- What it is: The Autonomous Intelligence and Reinforcement Learning brain.
+- Why it is important: Houses the PPO Continuous Actor-Critic neural network, the
+  deterministic Safety Layer (handles red lights, car following, emergency pedestrian
+  stops), and the Online Crash Reflection engine that learns from mistakes.
+
+--------------------------------------------------------------------------------
+3. astar.py
+--------------------------------------------------------------------------------
+- What it is: The Global Route Planning and Path Generation module.
+- Why it is important: Uses the A* algorithm on the city road graph to find the
+  fastest path to any destination (Airport, Hospital, Mall, etc.) and generates
+  smooth cubic Bezier curves so the car turns naturally without sharp jerks.
+
+--------------------------------------------------------------------------------
+4. rl_policy.pt
+--------------------------------------------------------------------------------
+- What it is: The trained neural network weights checkpoint.
+- Why it is important: Contains the pre-trained weights for the Actor-Critic model.
+  It takes the 28-dimensional sensor vector as input and outputs continuous steering,
+  throttle, and brake values. Loaded automatically on startup.
+
+--------------------------------------------------------------------------------
+5. ai_learning_memory.json
+--------------------------------------------------------------------------------
+- What it is: Persistent AI memory storing lifetime crash experience and adapted rules.
+- Why it is important: Saves the total mistake counter across all simulation sessions
+  and holds adapted safety parameters (cornering entrance speed, lookahead distance,
+  restoring gains, and following buffer) so the AI actively learns from errors.
+
+--------------------------------------------------------------------------------
+6. run_simulation.bat
+--------------------------------------------------------------------------------
+- What it is: One-click Windows launcher batch script.
+- Why it is important: Allows you to start the whole simulation simply by double-
+  clicking the file. It automatically finds your Python installation, runs the
+  simulator, and pauses to show errors if anything goes wrong.
+
+--------------------------------------------------------------------------------
+7. requirements.txt
+--------------------------------------------------------------------------------
+- What it is: Python package dependencies file.
+- Why it is important: Lists the exact libraries needed to run the project
+  (pygame, torch, numpy). Install them with: 'pip install -r requirements.txt'.
+
+--------------------------------------------------------------------------------
+8. README.md
+--------------------------------------------------------------------------------
+- What it is: Complete architectural, algorithmic, and mathematical guide.
+- Why it is important: Explains all formulas (Bicycle Kinematics, Stanley Steering,
+  Pure Pursuit, IDM car following, PPO Loss/Rewards), system flowcharts, and how the
+  A* pathfinder and Reinforcement Learning work together.
+
+--------------------------------------------------------------------------------
+9. CODE_EXPLAINED.md
+--------------------------------------------------------------------------------
+- What it is: In-depth code walkthrough and visual system connection graph.
+- Why it is important: Walks through every function and class section-by-section
+  across the codebase, and includes a visual Mermaid graph showing which file
+  connects to which and why.
+
+--------------------------------------------------------------------------------
+10. test_features.py
+--------------------------------------------------------------------------------
+- What it is: Automated 8-suite regression and validation test script.
+- Why it is important: Verifies that all simulation features (Pause button, Auto Drive,
+  landmark navigation, red light stops, manual override, mistake counter, unpark
+  watchdog) are 100% working and error-free. Run with: 'python test_features.py'.
+
+--------------------------------------------------------------------------------
+11. rl_env.py
+--------------------------------------------------------------------------------
+- What it is: Gym-compatible reinforcement learning environment interface.
+- Why it is important: Bridges the driving simulator with standard reinforcement
+  learning algorithms by providing observation, action, step(), and reset() APIs.
+
+--------------------------------------------------------------------------------
+12. train_rl.py
+--------------------------------------------------------------------------------
+- What it is: Reinforcement learning training script using PPO.
+- Why it is important: Used if you want to retrain or fine-tune the neural network
+  policy over hundreds or thousands of episodes from scratch.
+================================================================================

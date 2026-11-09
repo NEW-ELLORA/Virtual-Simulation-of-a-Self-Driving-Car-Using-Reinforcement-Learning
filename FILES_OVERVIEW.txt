@@ -80,10 +80,11 @@ clean directory in a few simple lines.
 --------------------------------------------------------------------------------
 10. test_features.py
 --------------------------------------------------------------------------------
-- What it is: Automated 8-suite regression and validation test script.
+- What it is: Automated 11-suite regression and validation test script.
 - Why it is important: Verifies that all simulation features (Pause button, Auto Drive,
   landmark navigation, red light stops, manual override, mistake counter, unpark
-  watchdog) are 100% working and error-free. Run with: 'python test_features.py'.
+  watchdog, grass off-road recovery, U-turn deceleration, deadlock watchdog)
+  are 100% working and error-free. Run with: 'python test_features.py'.
 
 --------------------------------------------------------------------------------
 11. rl_env.py

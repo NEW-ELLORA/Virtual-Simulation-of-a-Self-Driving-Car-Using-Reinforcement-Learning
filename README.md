@@ -15,6 +15,9 @@ An advanced, full-stack autonomous driving simulation environment built from scr
    - [Pure Pursuit Steering Geometry](#3-pure-pursuit-steering-geometry)
    - [Longitudinal Speed Control & IDM Car Following](#4-longitudinal-speed-control--idm-car-following)
    - [Cubic Bézier Transition Curves](#5-cubic-bézier-transition-curves)
+   - [Sequential Curvature Tracking & Kinematic U-Turn Deceleration](#6-sequential-curvature-tracking--kinematic-u-turn-deceleration)
+   - [Anti-Deadlock Queue Watchdog & In-Lane Corridor Filtering](#7-anti-deadlock-queue-watchdog--in-lane-corridor-filtering)
+   - [Surface Drag & Off-Road Grass Mobility](#8-surface-drag--off-road-grass-mobility)
 6. [Reinforcement Learning System (PPO Actor-Critic)](#reinforcement-learning-system-ppo-actor-critic)
    - [Continuous Action & Observation Space](#observation-space-mathcal-s-in-mathbbr28)
    - [PPO Clipped Objective & Value Function](#ppo-clipped-surrogate-objective)
@@ -46,7 +49,7 @@ simulation-based-self-driving-car/
 ├── astar.py                 # Topological road-network routing, cubic Bézier lane transitions, U-turns
 ├── rl_env.py                # Gym-compatible Reinforcement Learning training environment
 ├── train_rl.py              # PPO training pipeline with rollout collection and GAE calculation
-├── test_features.py         # Automated 8-suite regression and validation test harness
+├── test_features.py         # Automated 11-suite regression and validation test harness
 ├── run_simulation.bat       # One-click Windows execution batch script
 ├── run.bat                  # Quick execution alias batch script
 ├── requirements.txt         # Python package dependencies (pygame, torch, numpy)
@@ -232,6 +235,53 @@ Where:
 
 ---
 
+### 6. Sequential Curvature Tracking & Kinematic U-Turn Deceleration
+To eliminate high-speed cornering understeer and guardrail impacts during sharp $90^\circ$ turns and $180^\circ$ U-turns, the controller analyzes an upcoming ordered slice of path waypoints:
+
+$$\mathbf{S}_{upcoming} = \{\mathbf{p}_i \in \text{nav\_route\_pts} \mid i \in [k_{closest}, k_{closest} + 40]\}$$
+
+For each segment $(\mathbf{p}_{j}, \mathbf{p}_{j+1})$, the segment heading is computed as $\psi_j = \text{atan2}(y_{j+1} - y_j, x_{j+1} - x_j)$. The maximum heading deviation $\Delta \theta_{max}$ and cumulative curvature $\sum \Delta \psi$ classify turn sharpness:
+
+$$\text{is\_u\_turn} = \left( \Delta \theta_{max} > 1.25\text{ rad} \; (72^\circ) \quad \lor \quad \sum_{j} |\psi_{j+1} - \psi_j| > 1.60\text{ rad} \; (90^\circ\text{ to }180^\circ) \right)$$
+
+Safe cornering speed $v_{corner}$ and kinematic deceleration profiles are enforced before reaching the corner entrance:
+
+$$v_{target}(d) = \min\left(v_{posted}, \, \sqrt{v_{corner}^2 + 2 \cdot a_{comfort} \cdot \max(0, d_{turn} - 1.5)}\right)$$
+
+Where:
+- $v_{corner} = 2.78\text{ m/s}$ ($10\text{ km/h}$) for U-turns and hairpin loops with an extended $45\text{m}$ horizon.
+- $v_{corner} = 3.8\dots4.2\text{ m/s}$ ($14\dots15\text{ km/h}$) for sharp $90^\circ$ corners with a $32\text{m}$ horizon.
+- $a_{comfort} = 1.5\text{ m/s}^2$: Kinematic braking deceleration preventing sudden shock while guaranteeing entry speed is strictly $\le 10\text{ km/h}$.
+
+---
+
+### 7. Anti-Deadlock Queue Watchdog & In-Lane Corridor Filtering
+To prevent phantom freeze states where stationary side vehicles, parked curbside cars, or cross traffic falsely lock the brakes:
+
+1. **Tight Lateral Corridor Filtering**:
+   Only vehicles sharing the same lane corridor ($|e_{lat}| \le 1.35\text{m}$) are recognized as lead vehicles:
+   $$e_{lat} = - (x_{car} - x) \sin(\theta) + (y_{car} - y) \cos(\theta)$$
+   Vehicles in adjacent lanes ($|e_{lat}| > 1.5\text{m}$), parked vehicles, and oncoming opposite-lane traffic ($e_{lat} < -1.0\text{m}$) are completely excluded from lead braking logic.
+
+2. **Two-Stage Deadlock Watchdog**:
+   If the vehicle is held in standstill behind a lead obstruction ($v \approx 0$):
+   $$\tau_{stop} \leftarrow \tau_{stop} + \Delta t$$
+   - **Stage 1 (Creep Nudge)**: If $\tau_{stop} > 2.0\text{s}$ and physical clearance $s > 1.2\text{m}$, the vehicle releases brakes and creeps forward at $v = 1.2\text{ m/s}$ ($4.3\text{ km/h}$).
+   - **Stage 2 (Bypass Nudge)**: If $\tau_{stop} > 4.5\text{s}$ (traffic permanently stalled/deadlocked) and $s > 0.8\text{m}$, the vehicle initiates an autonomous bypass at $v = 2.5\text{ m/s}$ ($9\text{ km/h}$).
+
+---
+
+### 8. Surface Drag & Off-Road Grass Mobility
+When a vehicle drives off-road onto green grass terrain, realistic mobility is preserved using physical surface drag rather than artificial immobilizing stops:
+
+$$F_{drag} = \mu_{surface} \cdot m \cdot g + \frac{1}{2} \rho C_d A v^2$$
+
+- On asphalt ($surface = 1, 2$): $\mu_{surface} = 0.015$.
+- On grass / green areas ($surface = 0$): $\mu_{surface} = 0.020$ ($1.35\times$ rolling resistance).
+- Off-road top speed is naturally limited to $25\text{ km/h}$ while full engine torque in both forward ($u_{throttle} = 1.0$) and reverse ($u_{reverse} = 1.0$) remains active, enabling smooth, uninterrupted recovery back onto paved asphalt.
+
+---
+
 ## Reinforcement Learning System (PPO Actor-Critic)
 
 ### Observation Space ($\mathcal{S} \in \mathbb{R}^{28}$)
@@ -344,7 +394,7 @@ run_simulation.bat
 *(Or simply type `run.bat` or `python driving_sim.py`)*
 
 ### Step 3: Run the Full Test Harness
-Execute all 8 automated verification test suites:
+Execute all 11 automated verification test suites:
 ```bash
 python test_features.py
 ```

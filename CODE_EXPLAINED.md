@@ -166,6 +166,8 @@ Acts as an indispensable ISO 26262-style functional safety layer running concurr
   2. Applies IDM following distance deceleration if trailing a lead car within safety buffer distance.
   3. Executes emergency stops if a pedestrian steps into the active lane.
   4. Applies Stanley steering correction to prevent cornering boundary exceedance.
+  5. **Sequential Curvature Tracking & U-Turn Kinematic Deceleration**: Slices upcoming route polyline waypoints, identifies $90^\circ$ corners and $180^\circ$ U-turns ($\Delta \theta > 1.25\text{ rad}$ or cumulative turn $> 1.6\text{ rad}$), clamps speed to $10\text{ km/h}$, and enforces progressive kinematic braking ($v = \sqrt{v_{corner}^2 + 2 a \Delta d}$) over a $45\text{m}$ horizon.
+  6. **In-Lane Corridor Filtering & Anti-Deadlock Watchdog**: Limits lead vehicle tracking strictly to $|lat| \le 1.35\text{m}$ (ignoring side/adjacent cars). If held behind stationary traffic, stage 1 ($t > 2.0\text{s}$) initiates a gentle creeping nudge at $1.2\text{ m/s}$ ($4.3\text{ km/h}$) and stage 2 ($t > 4.5\text{s}$) forces an autonomous deadlock bypass at $2.5\text{ m/s}$ ($9\text{ km/h}$).
 - Dynamic parameters (`min_corner_speed`, `pre_turn_horizon`, `restoring_torque_gain`, `following_buffer`) are loaded from `ai_learning_memory.json` and mutate during crash reflection.
 
 ### Section 2.4: Online Crash Reflection Engine (`CrashLearner`)
@@ -244,7 +246,7 @@ Acts as an indispensable ISO 26262-style functional safety layer running concurr
 
 ## 7. Module 6: `test_features.py` (Automated Regression & Validation Suite)
 
-[`test_features.py`](file:///c:/Users/Ayush%20C%20S/OneDrive/Desktop/simulation%20based%20self%20driving%20car/test_features.py) is the master verification test harness containing 8 automated suites:
+[`test_features.py`](file:///c:/Users/Ayush%20C%20S/OneDrive/Desktop/simulation%20based%20self%20driving%20car/test_features.py) is the master verification test harness containing 11 automated suites:
 1. `test_pause_freezes_simulation()`: Validates that pausing freezes physics, vehicle speed, and world time.
 2. `test_auto_drive_and_destinations()`: Verifies $A^*$ route planning across all 7 landmark destinations.
 3. `test_manual_override_cancellation()`: Ensures user steering or throttle input immediately disengages Auto Drive.
@@ -253,6 +255,9 @@ Acts as an indispensable ISO 26262-style functional safety layer running concurr
 6. `test_full_headless_run()`: Runs a complete 60-frame headless simulation run across procedural cities.
 7. `test_mistake_learning_and_adaptation()`: Verifies that collisions dynamically increment lifetime mistake counters and adapt controller parameters in `ai_learning_memory.json`.
 8. `test_unpark_watchdog_and_override()`: Confirms that unparking yields to rear cross-traffic and the 2.0s watchdog breaks deadlocks.
+9. `test_grass_offroad_recovery()`: Verifies forward and reverse mobility and throttle recovery on off-road grass terrain.
+10. `test_uturn_speed_reduction()`: Validates that approaching a $180^\circ$ U-turn loop triggers active braking and safely limits speed to $\le 10\text{ km/h}$.
+11. `test_traffic_deadlock_watchdog_and_side_car_filtering()`: Confirms that side vehicles in adjacent lanes do not trigger false braking, and the two-stage watchdog initiates creeping ($2.0\text{s}$) and bypass ($4.5\text{s}$) nudges.
 
 ---
 

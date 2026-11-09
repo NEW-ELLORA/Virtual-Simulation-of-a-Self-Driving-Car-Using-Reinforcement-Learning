@@ -1,82 +1,18 @@
 {
-  "total_learned": 337,
-  "last_updated": "2026-11-09 17:14:05",
+  "total_learned": 345,
+  "last_updated": "2026-11-09 18:03:21",
   "controller_params": {
     "min_corner_speed": 3.4499999999999997,
     "pre_turn_horizon": 36.0,
     "following_buffer": 1.8,
-    "dynamic_headway": 0.8,
-    "lead_car_safety_gap": 19.0,
+    "dynamic_headway": 1.5499999999999998,
+    "lead_car_safety_gap": 32.0,
     "ped_safety_margin": 3.8,
     "curb_avoid_thresh": 1.2,
     "restoring_torque_gain": 0.43,
     "lookahead_min": 2.2
   },
   "history": [
-    {
-      "timestamp": "2026-11-08 21:37:04",
-      "reason": "HIT ANOTHER VEHICLE!",
-      "diagnosis": "Late braking behind lead vehicle (Impact at 23 km/h)",
-      "remediation": "Enforced +8m safety following horizon; penalized late brake reaction.",
-      "impact_speed_kmh": 22.6,
-      "weights_saved": true
-    },
-    {
-      "timestamp": "2026-11-08 21:38:37",
-      "reason": "HIT ANOTHER VEHICLE!",
-      "diagnosis": "Late braking behind lead vehicle (Impact at 18 km/h)",
-      "remediation": "Enforced +8m safety following horizon; penalized late brake reaction.",
-      "impact_speed_kmh": 18.4,
-      "weights_saved": true
-    },
-    {
-      "timestamp": "2026-11-08 21:39:58",
-      "reason": "HIT ANOTHER VEHICLE!",
-      "diagnosis": "Late braking behind lead vehicle (Impact at 30 km/h)",
-      "remediation": "Enforced +8m safety following horizon; penalized late brake reaction.",
-      "impact_speed_kmh": 29.8,
-      "weights_saved": true
-    },
-    {
-      "timestamp": "2026-11-08 21:41:18",
-      "reason": "HIT ANOTHER VEHICLE!",
-      "diagnosis": "Late braking behind lead vehicle (Impact at 34 km/h)",
-      "remediation": "Enforced +8m safety following horizon; penalized late brake reaction.",
-      "impact_speed_kmh": 34.4,
-      "weights_saved": true
-    },
-    {
-      "timestamp": "2026-11-08 21:49:56",
-      "reason": "HIT ANOTHER VEHICLE!",
-      "diagnosis": "Late braking behind lead vehicle (Impact at 18 km/h)",
-      "remediation": "Enforced +8m safety following horizon; penalized late brake reaction.",
-      "impact_speed_kmh": 18.4,
-      "weights_saved": true
-    },
-    {
-      "timestamp": "2026-11-08 21:56:48",
-      "reason": "HIT ANOTHER VEHICLE!",
-      "diagnosis": "Late braking behind lead vehicle (Impact at 17 km/h)",
-      "remediation": "Enforced +8m safety following horizon; penalized late brake reaction.",
-      "impact_speed_kmh": 17.5,
-      "weights_saved": true
-    },
-    {
-      "timestamp": "2026-11-08 21:57:47",
-      "reason": "HIT ANOTHER VEHICLE!",
-      "diagnosis": "Late braking behind lead vehicle (Impact at 17 km/h)",
-      "remediation": "Enforced +8m safety following horizon; penalized late brake reaction.",
-      "impact_speed_kmh": 17.1,
-      "weights_saved": true
-    },
-    {
-      "timestamp": "2026-11-08 21:57:47",
-      "reason": "HIT ANOTHER VEHICLE!",
-      "diagnosis": "Late braking behind lead vehicle (Impact at 18 km/h)",
-      "remediation": "Enforced +8m safety following horizon; penalized late brake reaction.",
-      "impact_speed_kmh": 18.0,
-      "weights_saved": true
-    },
     {
       "timestamp": "2026-11-08 21:57:47",
       "reason": "HIT ANOTHER VEHICLE!",
@@ -1607,6 +1543,70 @@
     },
     {
       "timestamp": "2026-11-09 17:14:05",
+      "reason": "HIT THE GUARDRAIL!",
+      "diagnosis": "Lateral roadway departure into barrier (Yaw rate: 0.35 rad/s)",
+      "remediation": "Adapted Parameters -> Corner Speed: 12.4 km/h | Pre-turn: 36m | Restoring Gain: 0.43 | Lookahead: 2.2m",
+      "impact_speed_kmh": 36.0,
+      "weights_saved": false
+    },
+    {
+      "timestamp": "2026-11-09 17:17:36",
+      "reason": "HIT A SIGNAL POLE!",
+      "diagnosis": "Collision with static geometry (HIT A SIGNAL POLE!)",
+      "remediation": "Adapted Parameters -> Corner Speed: 11.5 km/h | Pre-turn: 39m",
+      "impact_speed_kmh": 44.6,
+      "weights_saved": true
+    },
+    {
+      "timestamp": "2026-11-09 17:27:45",
+      "reason": "HIT ANOTHER VEHICLE!",
+      "diagnosis": "Late braking behind lead vehicle (Impact at 0 km/h)",
+      "remediation": "Adapted Parameters -> Standstill Buffer: 3.0m | Headway: 0.95s | Queue Gap: 22m",
+      "impact_speed_kmh": 0.0,
+      "weights_saved": true
+    },
+    {
+      "timestamp": "2026-11-09 17:42:00",
+      "reason": "HIT ANOTHER VEHICLE!",
+      "diagnosis": "Late braking behind lead vehicle (Impact at 13 km/h)",
+      "remediation": "Adapted Parameters -> Standstill Buffer: 4.2m | Headway: 1.10s | Queue Gap: 25m",
+      "impact_speed_kmh": 13.4,
+      "weights_saved": true
+    },
+    {
+      "timestamp": "2026-11-09 17:46:12",
+      "reason": "HEAD-ON COLLISION WITH ONCOMING VEHICLE (INCOMING LINE)!",
+      "diagnosis": "Entered oncoming traffic corridor / incoming vehicle line (Head-on hazard at 20 km/h)",
+      "remediation": "Adapted Parameters -> Standstill Buffer: 5.4m | Headway: 1.25s | Queue Gap: 28m",
+      "impact_speed_kmh": 20.0,
+      "weights_saved": true
+    },
+    {
+      "timestamp": "2026-11-09 17:47:28",
+      "reason": "HIT ANOTHER VEHICLE!",
+      "diagnosis": "Late braking behind lead vehicle (Impact at 0 km/h)",
+      "remediation": "Adapted Parameters -> Standstill Buffer: 6.0m | Headway: 1.40s | Queue Gap: 31m",
+      "impact_speed_kmh": 0.0,
+      "weights_saved": true
+    },
+    {
+      "timestamp": "2026-11-09 17:53:37",
+      "reason": "HIT ANOTHER VEHICLE!",
+      "diagnosis": "Late braking behind lead vehicle (Impact at 0 km/h)",
+      "remediation": "Adapted Parameters -> Standstill Buffer: 6.0m | Headway: 1.55s | Queue Gap: 32m",
+      "impact_speed_kmh": 0.0,
+      "weights_saved": true
+    },
+    {
+      "timestamp": "2026-11-09 17:56:47",
+      "reason": "HIT THE GUARDRAIL!",
+      "diagnosis": "Lateral roadway departure into barrier (Yaw rate: 0.35 rad/s)",
+      "remediation": "Adapted Parameters -> Corner Speed: 12.4 km/h | Pre-turn: 36m | Restoring Gain: 0.43 | Lookahead: 2.2m",
+      "impact_speed_kmh": 36.0,
+      "weights_saved": false
+    },
+    {
+      "timestamp": "2026-11-09 18:03:21",
       "reason": "HIT THE GUARDRAIL!",
       "diagnosis": "Lateral roadway departure into barrier (Yaw rate: 0.35 rad/s)",
       "remediation": "Adapted Parameters -> Corner Speed: 12.4 km/h | Pre-turn: 36m | Restoring Gain: 0.43 | Lookahead: 2.2m",

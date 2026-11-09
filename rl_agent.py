@@ -193,7 +193,9 @@ class CNNPerceptionEngine:
             cx_box = (min_x + max_x) // 2 + road_x_off
             cy_box = (min_y + max_y) // 2 + road_y_off
             res.cars.append((max(0, cx_box - w_box // 2), max(0, cy_box - h_box // 2), w_box, h_box))
-            res.closest_car_dist = float(np.clip(1.0 - (cy_box / float(H)), 0.05, 1.0))
+            # Only cars centered inside the vehicle's driving lane corridor update closest_car_dist
+            if int(W * 0.28) <= cx_box <= int(W * 0.72):
+                res.closest_car_dist = float(np.clip(1.0 - (cy_box / float(H)), 0.05, 1.0))
 
         # ---------------- 4. Pedestrian Detection (Corridor Filtered) ----------------
         ped_mask = (roi_road[:, :, 0] > 180) & (roi_road[:, :, 1] > 140) & (roi_road[:, :, 2] > 110) & (roi_road[:, :, 0] < 240)
@@ -711,6 +713,7 @@ class RuleBasedController:
         self.ped_safety_margin = 3.8
         self.curb_avoid_thresh = 1.85
         self.restoring_torque_gain = 0.35
+        self.lead_stop_timer = 0.0
 
     def check_rear_blind_spots(self, sim: Any) -> BlindSpotResult:
         """
@@ -785,45 +788,77 @@ class RuleBasedController:
         target_speed = posted_lim / 3.6 if (road_code in (1, 2) and posted_lim) else 11.1
         target_speed = min(target_speed, 16.0)
 
-        # 2. Comprehensive Pre-Turn Speed Control (Decelerate smoothly before corners)
+        # 2. Comprehensive Pre-Turn & U-Turn Speed Control (Decelerate smoothly before corners)
         pts = getattr(sim, 'nav_route_pts', None) or getattr(sim, 'nav_full_pts', None)
         max_turn_angle = 0.0
+        cum_turn_angle = 0.0
         dist_to_turn = 999.0
+        is_u_turn = False
         if pts and len(pts) >= 2:
-            cos_h, sin_h = math.cos(P.heading), math.sin(P.heading)
-            # Only examine waypoints strictly in front of the vehicle (> 1.2m ahead)
-            fwd_pts = [pt for pt in pts if ((pt[0] - P.x) * cos_h + (pt[1] - P.y) * sin_h) > 1.2]
-            if len(fwd_pts) >= 2:
-                p_prev = fwd_pts[0]
-                accum_dist = math.hypot(p_prev[0] - P.x, p_prev[1] - P.y)
-                for pt in fwd_pts[1:min(20, len(fwd_pts))]:
+            # Find closest waypoint along route polyline
+            best_i = 0
+            min_d_sq = float('inf')
+            for i, pt in enumerate(pts):
+                d_sq = (pt[0] - P.x) ** 2 + (pt[1] - P.y) ** 2
+                if d_sq < min_d_sq:
+                    min_d_sq = d_sq
+                    best_i = i
+
+            upcoming_pts = pts[best_i:min(len(pts), best_i + 40)]
+            if len(upcoming_pts) >= 2:
+                accum_dist = math.hypot(upcoming_pts[0][0] - P.x, upcoming_pts[0][1] - P.y)
+                p_prev = upcoming_pts[0]
+                prev_seg_hdg = P.heading
+                for pt in upcoming_pts[1:]:
                     seg_len = math.hypot(pt[0] - p_prev[0], pt[1] - p_prev[1])
+                    if seg_len < 0.2:
+                        continue
                     accum_dist += seg_len
-                    if accum_dist > 45.0:
+                    if accum_dist > 55.0:
                         break
                     seg_heading = math.atan2(pt[1] - p_prev[1], pt[0] - p_prev[0])
+                    # Difference relative to current vehicle heading
                     angle_diff = abs((seg_heading - P.heading + math.pi) % (2.0 * math.pi) - math.pi)
+                    # Difference relative to preceding segment (curve progression)
+                    bend_diff = abs((seg_heading - prev_seg_hdg + math.pi) % (2.0 * math.pi) - math.pi)
+                    cum_turn_angle += bend_diff
                     if angle_diff > max_turn_angle:
                         max_turn_angle = angle_diff
                         dist_to_turn = min(dist_to_turn, accum_dist)
                     p_prev = pt
+                    prev_seg_hdg = seg_heading
 
-        # Compute safe cornering speed based on turn sharpness
-        # Minimum safe cornering speed: self.min_corner_speed (adapts on crash reflection)
-        if max_turn_angle > 0.45:       # Sharp corner (> 25 deg)
+        # Detect U-turn or hairpin loop (> 72 deg deviation or cumulative loop > 90 deg)
+        is_u_turn = (max_turn_angle > 1.25 or cum_turn_angle > 1.60)
+
+        # Compute safe cornering speed and braking horizon based on turn sharpness
+        if is_u_turn:
+            # U-turn / Hairpin: slow to safe crawl (10 km/h = 2.78 m/s) with 45m braking horizon
+            corner_speed = min(self.min_corner_speed, 2.78)
+            horizon = max(self.pre_turn_horizon, 45.0)
+            a_decel = 1.5  # comfortable deceleration m/s^2
+        elif max_turn_angle > 0.45 or cum_turn_angle > 0.65:       # Sharp corner (> 25 deg)
             corner_speed = self.min_corner_speed
+            horizon = max(self.pre_turn_horizon, 32.0)
+            a_decel = 1.8
         elif max_turn_angle > 0.22:     # Medium turn (12 - 25 deg)
             corner_speed = max(self.min_corner_speed, 5.2)
+            horizon = max(self.pre_turn_horizon - 5.0, 24.0)
+            a_decel = 2.0
         elif max_turn_angle > 0.12:     # Gentle curve (7 - 12 deg)
             corner_speed = max(self.min_corner_speed + 1.5, 7.5)
+            horizon = 20.0
+            a_decel = 2.2
         else:
             corner_speed = target_speed
+            horizon = 15.0
+            a_decel = 2.5
 
-        # Pre-turn smooth deceleration horizon (adapts pre-turn braking distance)
-        if max_turn_angle > 0.18 and dist_to_turn < self.pre_turn_horizon:
-            turn_blend = max(0.0, min(1.0, dist_to_turn / self.pre_turn_horizon))
-            target_speed = min(target_speed, corner_speed + turn_blend * max(0.0, target_speed - corner_speed))
-        elif max_turn_angle > 0.18:
+        # Progressive kinematic deceleration: ensures vehicle reaches corner_speed BEFORE the turn entry
+        if max_turn_angle > 0.18 and dist_to_turn < horizon:
+            v_kinematic = math.sqrt(corner_speed * corner_speed + 2.0 * a_decel * max(0.0, dist_to_turn - 1.5))
+            target_speed = min(target_speed, max(corner_speed, v_kinematic))
+        elif max_turn_angle > 0.18 and dist_to_turn < 4.0:
             target_speed = min(target_speed, corner_speed)
 
         # 3. Check Destination Bay Proximity (Drive off street into parking spot)
@@ -901,7 +936,13 @@ class RuleBasedController:
             if veh_ahead_speed < 1.0:
                 # Stopped lead vehicle: glide smoothly into adaptive standstill buffer
                 if veh_ahead_gap <= (fb + 0.05):
-                    target_speed = 0.0
+                    # Check deadlock watchdog: if stopped > 2.0s and room ahead > 1.2m, creep; if > 4.5s, bypass
+                    if self.lead_stop_timer > 4.5 and veh_ahead_gap > 0.8:
+                        target_speed = 2.5
+                    elif self.lead_stop_timer > 2.0 and veh_ahead_gap > 1.2:
+                        target_speed = 1.2
+                    else:
+                        target_speed = 0.0
                 elif veh_ahead_gap < (fb + 4.2):
                     target_speed = min(target_speed, max(0.6, (veh_ahead_gap - fb) * 0.75))
                 else:
@@ -915,6 +956,8 @@ class RuleBasedController:
                     target_speed = min(target_speed, max(0.0, veh_ahead_speed * 0.90))
                 elif veh_ahead_gap < self.lead_car_safety_gap:
                     target_speed = min(target_speed, max(2.5, veh_ahead_speed + 0.8))
+        else:
+            self.lead_stop_timer = 0.0
 
         # 7. Pedestrian Ahead (only if actively crossing or inside roadway corridor)
         ped_ahead_dist = self._check_pedestrian_ahead(sim)
@@ -966,13 +1009,14 @@ class RuleBasedController:
             # Below target speed: smooth acceleration
             thr = float(np.clip(0.40 + 0.35 * speed_err, 0.0, 1.0))
             brk = 0.0
-        elif speed_abs <= target_speed + 2.0:
-            # Natural coasting deadband (~7 km/h buffer): NEVER touch brake while cruising
+        elif speed_abs <= target_speed + (0.5 if is_u_turn else 2.0):
+            # Natural coasting deadband
             thr, brk = 0.0, 0.0
         else:
             # Speed substantially exceeds target: apply progressive deceleration
             thr = 0.0
-            brk = float(np.clip((speed_abs - (target_speed + 1.8)) * 0.20, 0.08, 0.70))
+            margin = 0.4 if is_u_turn else 1.8
+            brk = float(np.clip((speed_abs - (target_speed + margin)) * 0.30, 0.12, 0.85))
 
         return steer, thr, brk
 
@@ -1020,34 +1064,52 @@ class RuleBasedController:
                 return steer, 0.0, 0.0
 
         # 2b. Dynamic Lead Vehicle Following & Queue Stoppage (Adaptive following buffer)
+        dt = 0.033
         if veh_gap < 30.0:
             rem_gap = veh_gap - (self.following_buffer + 0.05)
             if rem_gap <= 0.15:
-                # Front bumper reached target adaptive gap behind lead vehicle - hold full stop
-                self.driving_status = "WAITING AT RED LIGHT (TRAFFIC QUEUE)" if must_stop else "WAITING BEHIND LEAD VEHICLE"
-                return steer, 0.0, 0.85
-            elif veh_speed < 0.8:
-                # Lead vehicle is stopped: smoothly glide and close gap to following_buffer without oscillating
-                v_target = float(np.clip(math.sqrt(max(0.1, 2.0 * 1.0 * rem_gap)), 0.6, 6.0))
-                self.driving_status = "CLOSING GAP IN TRAFFIC QUEUE" if rem_gap < 3.5 else "DECELERATING FOR LEAD VEHICLE"
-                if speed_abs > v_target:
-                    brk = float(np.clip((speed_abs - v_target) / 1.5, 0.15, 0.65))
-                    return steer, 0.0, brk
-                elif speed_abs < v_target - 0.2:
-                    thr = float(np.clip(0.28 + (v_target - speed_abs) * 0.15, 0.25, 0.45))
-                    return steer, thr, 0.0
+                # Front bumper reached target adaptive gap behind lead vehicle
+                if speed_abs < 0.2:
+                    self.lead_stop_timer += dt
                 else:
-                    return steer, 0.0, 0.0
-            elif veh_speed >= 0.8 and rem_gap < 8.0:
-                # Lead vehicle is pulling away: smoothly match traffic flow
-                self.driving_status = "FOLLOWING TRAFFIC STREAM"
-                v_target = veh_speed
-                if speed_abs > v_target + 0.5:
-                    return steer, 0.0, 0.35
-                elif speed_abs < v_target:
-                    return steer, 0.55, 0.0
+                    self.lead_stop_timer = max(0.0, self.lead_stop_timer - dt)
+
+                # Deadlock Watchdog: prevent indefinite freezing behind stationary / side obstacles
+                if self.lead_stop_timer > 4.5 and veh_gap > 0.8:
+                    self.driving_status = "BYPASSING TRAFFIC DEADLOCK"
+                    return steer, 0.35, 0.0
+                elif self.lead_stop_timer > 2.0 and veh_gap > 1.2:
+                    self.driving_status = "CREEPING PAST TRAFFIC QUEUE"
+                    return steer, 0.28, 0.0
                 else:
-                    return steer, 0.0, 0.0
+                    self.driving_status = "WAITING AT RED LIGHT (TRAFFIC QUEUE)" if must_stop else "WAITING BEHIND LEAD VEHICLE"
+                    return steer, 0.0, 0.85
+            else:
+                self.lead_stop_timer = max(0.0, self.lead_stop_timer - dt * 2.0)
+                if veh_speed < 0.8:
+                    # Lead vehicle is stopped: smoothly glide and close gap to following_buffer without oscillating
+                    v_target = float(np.clip(math.sqrt(max(0.1, 2.0 * 1.0 * rem_gap)), 0.6, 6.0))
+                    self.driving_status = "CLOSING GAP IN TRAFFIC QUEUE" if rem_gap < 3.5 else "DECELERATING FOR LEAD VEHICLE"
+                    if speed_abs > v_target:
+                        brk = float(np.clip((speed_abs - v_target) / 1.5, 0.15, 0.65))
+                        return steer, 0.0, brk
+                    elif speed_abs < v_target - 0.2:
+                        thr = float(np.clip(0.28 + (v_target - speed_abs) * 0.15, 0.25, 0.45))
+                        return steer, thr, 0.0
+                    else:
+                        return steer, 0.0, 0.0
+                elif veh_speed >= 0.8 and rem_gap < 8.0:
+                    # Lead vehicle is pulling away: smoothly match traffic flow
+                    self.driving_status = "FOLLOWING TRAFFIC STREAM"
+                    v_target = veh_speed
+                    if speed_abs > v_target + 0.5:
+                        return steer, 0.0, 0.35
+                    elif speed_abs < v_target:
+                        return steer, 0.55, 0.0
+                    else:
+                        return steer, 0.0, 0.0
+        else:
+            self.lead_stop_timer = 0.0
 
         # 3. Traffic Signal Stop Line Glide (Smooth v_target approach, bumper right at stop line)
         if must_stop and dist_to_stop < 22.0:
@@ -1237,11 +1299,21 @@ class RuleBasedController:
         return min_rear_d
 
     def _find_lookahead_point(self, px: float, py: float, pts: List[Tuple[float, float]], lookahead: float) -> Tuple[float, float]:
-        for i in range(len(pts) - 1):
-            ax, ay = pts[i]
-            bx, by = pts[i + 1]
-            if math.hypot(bx - px, by - py) >= lookahead:
-                return (bx, by)
+        if not pts:
+            return (px, py)
+        # Find closest point on path to current position
+        best_i = 0
+        min_d_sq = float('inf')
+        for i, (x, y) in enumerate(pts):
+            d_sq = (x - px) ** 2 + (y - py) ** 2
+            if d_sq < min_d_sq:
+                min_d_sq = d_sq
+                best_i = i
+
+        # Step forward along the path from best_i until lookahead distance is reached
+        for i in range(best_i, len(pts)):
+            if math.hypot(pts[i][0] - px, pts[i][1] - py) >= lookahead:
+                return pts[i]
         return pts[-1]
 
     def _check_signal_ahead(self, sim: Any) -> Tuple[bool, float]:
@@ -1262,6 +1334,7 @@ class RuleBasedController:
     def _check_vehicle_ahead(self, sim: Any) -> Tuple[float, float]:
         """
         Calculates TRUE bumper-to-bumper distance to lead vehicle in forward path.
+        Distinguishes in-lane vehicles from adjacent lane or parked side vehicles.
         Returns: (bumper_gap, lead_speed)
         """
         P = sim.player
@@ -1280,17 +1353,35 @@ class RuleBasedController:
                 car_len = getattr(car, 'length', 4.5)
                 bumper_gap = fwd - (P.length * 0.5 + car_len * 0.5)
 
-                # Same-direction lead vehicle following (up to 35m)
-                same_dir = (math.cos(car.heading - P.heading) > 0.30)
-                if same_dir and -0.5 < bumper_gap < 35.0 and abs(lat) < 2.25:
-                    if bumper_gap < min_gap:
-                        min_gap = bumper_gap
-                        lead_speed = getattr(car, 'v', 0.0)
-                # Intersection cross-traffic / oncoming collision avoidance in forward corridor
-                elif not same_dir and 0.0 < bumper_gap < 14.0 and abs(lat) < 2.20:
-                    if bumper_gap < min_gap:
-                        min_gap = bumper_gap
-                        lead_speed = 0.0
+                cos_rel = math.cos(car.heading - P.heading)
+
+                # Same-direction lead vehicle following (within our lane corridor: |lat| < 1.35m)
+                if cos_rel > 0.65:
+                    if -0.5 < bumper_gap < 35.0 and abs(lat) < 1.35:
+                        if bumper_gap < min_gap:
+                            min_gap = bumper_gap
+                            lead_speed = getattr(car, 'v', 0.0)
+                # Opposing oncoming vehicle (cos_rel < -0.5):
+                # On two-way roads, oncoming cars pass to the side in their own lane.
+                # Only yield if they are directly head-on in our path (|lat| < 0.95m and bumper_gap < 6.0m)
+                elif cos_rel < -0.5:
+                    if 0.0 < bumper_gap < 6.0 and abs(lat) < 0.95:
+                        if bumper_gap < min_gap:
+                            min_gap = bumper_gap
+                            lead_speed = 0.0
+                # Cross traffic at intersections / oblique vehicles:
+                # Only yield if they are directly in the forward bumper clearance zone (|lat| < 1.15m and bumper_gap < 4.5m)
+                # OR actively moving across our path (car.v > 0.8)
+                else:
+                    if 0.0 < bumper_gap < 4.5 and abs(lat) < 1.15:
+                        if bumper_gap < min_gap:
+                            min_gap = bumper_gap
+                            lead_speed = 0.0
+                    elif 0.0 < bumper_gap < 10.0 and abs(lat) < 1.35 and getattr(car, 'v', 0.0) > 0.8:
+                        if bumper_gap < min_gap:
+                            min_gap = bumper_gap
+                            lead_speed = 0.0
+
         return min_gap, lead_speed
 
     def _check_pedestrian_ahead(self, sim: Any) -> float:
@@ -1392,12 +1483,13 @@ class AutoDriveController:
             if must_stop and dist_s <= 0.45:
                 thr = 0.0
                 brk = max(brk, 0.85)
-        if len(vis_res.cars) > 0 and vis_res.closest_car_dist < 0.15:
-            thr = 0.0
-            brk = 1.0
-        if len(vis_res.peds) > 0 and vis_res.closest_ped_dist < 0.18:
-            thr = 0.0
-            brk = 1.0
+        if getattr(self.rule_based, 'lead_stop_timer', 0.0) < 2.0:
+            if len(vis_res.cars) > 0 and vis_res.closest_car_dist < 0.12:
+                thr = 0.0
+                brk = 1.0
+            if len(vis_res.peds) > 0 and vis_res.closest_ped_dist < 0.15:
+                thr = 0.0
+                brk = 1.0
 
         # 4. Record step for online crash reflection buffer
         self.crash_learner.record_step(obs, np.array([steer, thr, brk]), log_prob, val, sim.player.v)

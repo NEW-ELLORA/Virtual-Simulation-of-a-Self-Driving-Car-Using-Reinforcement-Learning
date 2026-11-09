@@ -274,6 +274,97 @@ def test_grass_offroad_recovery():
     print("  -> PASSED: Vehicle drives, steers, and recovers cleanly on grass without getting stuck.")
 
 
+
+def test_uturn_speed_reduction():
+    print("[TEST 10] Verifying U-turn and sharp turn deceleration...")
+    sim = Simulator(headless=True, seed=42)
+    ctrl = sim.auto_drive_controller.rule_based
+
+    P = sim.player
+    P.x, P.y = 100.0, 100.0
+    P.heading = 0.0  # Facing East (+X)
+    P.v = 11.0       # 40 km/h cruising speed
+
+    # Create a route with a 180-degree U-turn loop 15 meters ahead
+    u_turn_pts = [
+        (100.0, 100.0),
+        (115.0, 100.0),  # Straight approach
+        (122.0, 105.0),  # Turning North
+        (122.0, 115.0),
+        (115.0, 120.0),  # Turning West (180 deg reversal)
+        (100.0, 120.0)
+    ]
+    sim.nav_route_pts = u_turn_pts
+
+    steer, thr, brk = ctrl.compute_action(sim)
+
+    # 1. Vehicle approaching U-turn at 40 km/h must aggressively brake
+    assert brk > 0.25, f"Expected active braking before U-turn, got brk={brk:.2f}"
+    assert thr == 0.0, f"Throttle must be zero while braking for U-turn, got thr={thr:.2f}"
+
+    # 2. At low speed (2.5 m/s), vehicle should comfortably coast/maintain turn speed without overspeeding
+    P.v = 2.5
+    steer, thr, brk = ctrl.compute_action(sim)
+    assert brk == 0.0, f"Vehicle at safe U-turn speed (2.5 m/s) should not slam brakes, got brk={brk:.2f}"
+    print("  -> PASSED: Vehicle properly detects upcoming U-turn, brakes smoothly, and clamps speed to <=10 km/h.")
+
+
+def test_traffic_deadlock_watchdog_and_side_car_filtering():
+    print("[TEST 11] Verifying traffic queue deadlock watchdog and side vehicle filtering...")
+    sim = Simulator(headless=True, seed=42)
+    ctrl = sim.auto_drive_controller.rule_based
+
+    P = sim.player
+    P.x, P.y = 100.0, 100.0
+    P.heading = 0.0
+    P.v = 0.0
+
+    class DummyTrafficCar:
+        def __init__(self, x, y, heading, v=0.0):
+            self.x = x
+            self.y = y
+            self.heading = heading
+            self.v = v
+            self.z = 0.0
+            self.length = 4.5
+
+    # 1. Side Vehicle: Parked / stopped in adjacent lane (lat = 2.0m to the right)
+    side_car = DummyTrafficCar(x=106.0, y=102.0, heading=0.0, v=0.0)
+    sim.traffic.cars = [side_car]
+
+    gap, speed = ctrl._check_vehicle_ahead(sim)
+    assert gap > 50.0, f"Side vehicle in adjacent lane (lat=2.0m) must not be treated as lead obstacle, got gap={gap:.1f}m"
+    print("  -> Side vehicle in adjacent lane successfully ignored (no false braking).")
+
+    # 2. In-Lane Lead Vehicle: Stopped directly ahead in same lane
+    lead_car = DummyTrafficCar(x=106.0, y=100.0, heading=0.0, v=0.0)
+    sim.traffic.cars = [lead_car]
+
+    gap, speed = ctrl._check_vehicle_ahead(sim)
+    assert gap < 5.0, f"In-lane lead vehicle must be detected, got gap={gap:.1f}m"
+
+    # Initially at standstill: should wait behind lead vehicle
+    ctrl.lead_stop_timer = 0.0
+    steer, thr, brk = ctrl.supervise_action(sim, np.array([0.0, 0.0, 0.0]))
+    assert brk > 0.5, f"Must brake while waiting behind lead vehicle, got brk={brk:.2f}"
+    assert "WAITING BEHIND LEAD VEHICLE" in ctrl.driving_status
+
+    # Watchdog Stage 1: Stopped > 2.0s with gap > 1.2m -> Creep forward gently
+    ctrl.lead_stop_timer = 2.5
+    steer, thr, brk = ctrl.supervise_action(sim, np.array([0.0, 0.0, 0.0]))
+    assert thr > 0.20 and brk == 0.0, f"Must creep forward after 2s stop, got thr={thr:.2f}, brk={brk:.2f}"
+    assert "CREEPING PAST TRAFFIC QUEUE" in ctrl.driving_status
+    print("  -> Deadlock watchdog stage 1 (creep nudge at 2.5s) PASSED.")
+
+    # Watchdog Stage 2: Stopped > 4.5s -> Force bypass nudge
+    ctrl.lead_stop_timer = 5.0
+    steer, thr, brk = ctrl.supervise_action(sim, np.array([0.0, 0.0, 0.0]))
+    assert thr >= 0.30 and brk == 0.0, f"Must bypass deadlock after 4.5s stop, got thr={thr:.2f}, brk={brk:.2f}"
+    assert "BYPASSING TRAFFIC DEADLOCK" in ctrl.driving_status
+    print("  -> Deadlock watchdog stage 2 (bypass nudge at 5.0s) PASSED.")
+    print("  -> PASSED: Deadlock watchdog prevents vehicle freeze and side vehicles do not block traffic.")
+
+
 if __name__ == '__main__':
     print("=======================================================")
     print("         RUNNING AUTOMATED VERIFICATION SUITE          ")
@@ -287,4 +378,6 @@ if __name__ == '__main__':
     test_mistake_learning_and_adaptation()
     test_unpark_watchdog_and_override()
     test_grass_offroad_recovery()
-    print("\nALL 9 VERIFICATION TEST SUITES PASSED SUCCESSFULLY!")
+    test_uturn_speed_reduction()
+    test_traffic_deadlock_watchdog_and_side_car_filtering()
+    print("\nALL 11 VERIFICATION TEST SUITES PASSED SUCCESSFULLY!")

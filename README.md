@@ -20,7 +20,7 @@ An advanced, full-stack autonomous driving simulation environment built from scr
    - [PPO Clipped Objective & Value Function](#ppo-clipped-surrogate-objective)
    - [Comprehensive Reward Function](#reward-formulation)
    - [Online Crash Reflection & Dynamic Learning](#online-crash-reflection--dynamic-adaptation)
-7. [Global Graph Routing ($A^*$ Algorithm)](#global-graph-routing-a-algorithm)
+7. [Global Graph Routing (A^* Algorithm)](#global-graph-routing-a-algorithm)
 8. [Installation & Quickstart Guide](#installation--quickstart-guide)
 9. [Controls & In-Game Telemetry](#controls--in-game-telemetry)
 

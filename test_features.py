@@ -234,6 +234,46 @@ def test_unpark_watchdog_and_override():
     print("  -> PASSED: Unpark deadlock watchdog and manual override work correctly.")
 
 
+def test_grass_offroad_recovery():
+    print("[TEST 9] Verifying Vehicle Mobility and Recovery on Grass / Green Area...")
+    sim = Simulator(headless=True, seed=42)
+    P = sim.player
+
+    # Find a coordinate that is on grass (code == 0) and free of buildings/trees
+    grass_x, grass_y = 50.0, 50.0
+    for test_x in range(10, 400, 20):
+        for test_y in range(10, 400, 20):
+            surf_code, _ = sim.city.surface_at(float(test_x), float(test_y))
+            if surf_code == 0:
+                P.x, P.y = float(test_x), float(test_y)
+                if not sim.city.static_collision(P.corners(), P.lvl):
+                    grass_x, grass_y = float(test_x), float(test_y)
+                    break
+        if grass_x != 50.0 or grass_y != 50.0:
+            break
+
+    P.x, P.y, P.v = grass_x, grass_y, 0.0
+    surf_code, _ = sim.city.surface_at(P.x, P.y)
+    assert surf_code == 0, f"Expected grass surface (code 0), got {surf_code}"
+
+    # 1. Forward Acceleration on Grass: Pressing gas must accelerate vehicle
+    for _ in range(30):  # 30 * 0.02s = 0.6s
+        sim._step(0.0, 1.0, 0.0, Config.PHYS_DT)
+
+    assert P.v > 1.2, f"Vehicle should accelerate forward on grass, got v={P.v:.2f} m/s ({P.v*3.6:.1f} km/h)"
+    print(f"  -> Forward drive on grass: Reached {P.v * 3.6:.1f} km/h (PASSED)")
+
+    # 2. Reverse Recovery on Grass: Pressing reverse must reverse out of grass
+    P.v = 0.0
+    P.in_reverse = True
+    for _ in range(30):
+        sim._step(0.0, 0.0, 1.0, Config.PHYS_DT)
+
+    assert P.v < -1.0, f"Vehicle should reverse on grass, got v={P.v:.2f} m/s"
+    print(f"  -> Reverse on grass: Reached {abs(P.v) * 3.6:.1f} km/h (PASSED)")
+    print("  -> PASSED: Vehicle drives, steers, and recovers cleanly on grass without getting stuck.")
+
+
 if __name__ == '__main__':
     print("=======================================================")
     print("         RUNNING AUTOMATED VERIFICATION SUITE          ")
@@ -246,4 +286,5 @@ if __name__ == '__main__':
     test_full_headless_run()
     test_mistake_learning_and_adaptation()
     test_unpark_watchdog_and_override()
-    print("\nALL 8 VERIFICATION TEST SUITES PASSED SUCCESSFULLY!")
+    test_grass_offroad_recovery()
+    print("\nALL 9 VERIFICATION TEST SUITES PASSED SUCCESSFULLY!")

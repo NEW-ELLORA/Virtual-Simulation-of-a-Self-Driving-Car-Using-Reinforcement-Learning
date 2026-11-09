@@ -2694,6 +2694,7 @@ class Car:
         # ---------------- real vehicle dynamics & tire physics ----------------
         grip = 1.0
         surf_drag = 1.0
+        is_grass = False
         if city is not None:
             code, _ = city.surface_at(self.x, self.y, self.lvl)
             if code in (1, 2):    # Paved asphalt road / highway / landmark driveway
@@ -2703,13 +2704,22 @@ class Car:
                 grip = 0.85
                 surf_drag = 1.15
             else:                 # Grass / unpaved terrain
-                grip = 0.52
-                surf_drag = 3.2
+                grip = 0.72
+                surf_drag = 1.35
+                is_grass = True
         self.tire_grip = grip
 
-        # Surface drag decelerates off-road motion
-        if surf_drag > 1.0 and abs(v) > 0.1:
-            self.v -= math.copysign((surf_drag - 1.0) * 4.2 * dt, self.v)
+        # Off-road grass physics: allows vehicle to always drive and recover back to road without getting stuck
+        if is_grass:
+            v_cap = 6.94  # ~25 km/h off-road limit on grass terrain
+            if abs(self.v) > v_cap:
+                self.v -= math.copysign(3.5 * dt, self.v)
+            elif self.throttle < 0.05 and (not in_rev or self.brake < 0.05) and abs(self.v) > 0.1:
+                # Natural coasting rolling resistance when no pedal is pressed
+                self.v -= math.copysign(1.5 * dt, self.v)
+        elif surf_drag > 1.0 and abs(self.v) > 0.1:
+            if self.throttle < 0.05 and (not in_rev or self.brake < 0.05):
+                self.v -= math.copysign((surf_drag - 1.0) * 2.5 * dt, self.v)
 
         # Dynamic tire friction limit and lateral grip
         v_ref = max(av, 1.5)
